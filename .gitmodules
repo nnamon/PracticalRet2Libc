@@ -1,0 +1,3 @@
+[submodule "src/checksec.sh"]
+	path = src/checksec.sh
+	url = https://github.com/slimm609/checksec.sh.git
