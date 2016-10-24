@@ -218,6 +218,28 @@ variables and before the saved return address. When a function returns, this
 guard value is checked and if it differs from the value provided by a secure
 source, then the program is terminated.
 
+In the following stack diagram, an additional stack canary is added right after
+the buffer. The valid value of this stack canary is 0x01efcdab.
+
+![Fig 4.1. Stack canary after buffer][canary1]
+
+Now, the attacker attempts their exploit with the standard payload again. The
+stack diagram looks like this after the read:
+
+![Fig 4.2. Stack canary corrupted][canary2]
+
+Notice that the stack canary has been overwritten and corrupted by the padding
+of 'A's (0x41). The value of the canary is now 0x41414141. Before the function
+returns, the canary is xored against the value of the 'master' canary. If the
+result is 0, implying equality, then the function is allowed to return.
+Otherwise, the program terminates itself. In this case, the program fails the
+check, prints a warning message, and exits.
+
+![Fig 4.3. Stack canary check fails][canary3]
+
+Thus, the attacker is not even able to redirect control flow and the exploit
+fails.
+
 ## Return Oriented Programming
 
 We will now introduce a technique to bypass the NX and ASLR protections.
@@ -245,3 +267,6 @@ subset called Return to Libc.
 [aslr2]: ./diagrams/aslr2.png
 [aslr3]: ./diagrams/aslr3.png
 [aslr4]: ./diagrams/aslr4.png
+[canary1]: ./diagrams/canary1.png
+[canary2]: ./diagrams/canary2.png
+[canary3]: ./diagrams/canary3.png
