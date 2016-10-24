@@ -9,6 +9,19 @@ protections enabled. We wish to build upon this knowledge and introduce methods
 to perform a successful attack when more protections are enabled (NX, Stack
 Canaries, ASLR).
 
+## Pre-Requisites
+
+We assume participants have the following pre-requisites:
+
+1. A thorough understanding of the classic buffer overflow techniques to spawn a
+   shell (Assignment 1).
+2. The ability to read C.
+3. Some Python, GDB and bash knowledge.
+
+Since time is rather limited, this will be a very fast paced lesson. Feel free
+to pause the video or peruse the syllabus document for an in-depth explanation
+for the concepts.
+
 ## Basic Exploitation Refresher
 
 Recall the vulnerable binary that was presented in the first assignment. The
@@ -107,6 +120,31 @@ Breaking down the important arguments and commands:
 `echo 0 | sudo tee /sys/proc/kernel/randomize_va_space`
 * Write 0 into the randomize\_va\_space kernel parameter to disable ASLR.
 
+Let us take a look at the memory mappings for such a binary.
+
+```shell
+gdb-peda$ vmmap
+Start      End        Perm      Name
+0x08048000 0x08049000 r-xp      /tmp/vuln1-nocanary-execstack
+0x08049000 0x0804a000 r-xp      /tmp/vuln1-nocanary-execstack
+0x0804a000 0x0804b000 rwxp      /tmp/vuln1-nocanary-execstack
+0xf7df0000 0xf7df1000 rwxp      mapped
+0xf7df1000 0xf7fa5000 r-xp      /lib/i386-linux-gnu/libc-2.21.so
+0xf7fa5000 0xf7fa8000 r-xp      /lib/i386-linux-gnu/libc-2.21.so
+0xf7fa8000 0xf7faa000 rwxp      /lib/i386-linux-gnu/libc-2.21.so
+0xf7faa000 0xf7fac000 rwxp      mapped
+0xf7fd5000 0xf7fd7000 rwxp      mapped
+0xf7fd7000 0xf7fd9000 r--p      [vvar]
+0xf7fd9000 0xf7fda000 r-xp      [vdso]
+0xf7fda000 0xf7ffc000 r-xp      /lib/i386-linux-gnu/ld-2.21.so
+0xf7ffc000 0xf7ffd000 r-xp      /lib/i386-linux-gnu/ld-2.21.so
+0xf7ffd000 0xf7ffe000 rwxp      /lib/i386-linux-gnu/ld-2.21.so
+0xfffdd000 0xffffe000 rwxp      [stack]
+```
+
+Important things to take note of the output above is the fact that the stack is
+marked 'rwxp' which means it is both writable and executable.
+
 ## Exploitation Illustration
 
 First, let's visualise how the stack looks like before the buffer is read into:
@@ -158,6 +196,8 @@ working.
 Also known as Data Execution Prevention (DEP), this protection marks writable
 regions of memory as non-executable. This prevents the processor from executing
 in these marked regions of memory.
+
+If we look at the memory map of
 
 In the following diagrams, we will be introducing a new indicator colour for the
 memory regions to denote 'writable and non-executable' mapped regions. Firstly,
@@ -251,6 +291,74 @@ Return Oriented Programming is an exploitation technique to re-use executable
 code portions in the binary or in other shared libraries. In this presentation,
 we will not go too in-depth to the general ROP concepts and instead focus on a
 subset called Return to Libc.
+
+### Vulnerable Example 1
+
+To introduce the concept of re-using code within the binary, let us introduce an
+extremely simple vulnerable binary that implements a password system.
+
+```c
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
+
+void give_shell() {
+    system("/bin/sh");
+}
+
+void vuln() {
+    char password[16];
+    puts("What is the password: ");
+    scanf("%s", password);
+    if (strcmp(password, "31337h4x") == 0) {
+        puts("Correct password!");
+        give_shell();
+    }
+    else {
+        puts("Incorrect password!");
+    }
+}
+
+int main() {
+    vuln();
+}
+```
+
+The assumptions we make are that the attacker does not know the password. They
+have to exploit the program to obtain the shell.
+
+From this point onwards, we assume that the NX and ASLR protections are enabled.
+Observing the output from viewing the memory mapping permissions in GDB:
+
+```shell
+gdb-peda$ vmmap
+Start      End        Perm      Name
+0x08048000 0x08049000 r-xp      /tmp/vuln2
+0x08049000 0x0804a000 r--p      /tmp/vuln2
+0x0804a000 0x0804b000 rw-p      /tmp/vuln2
+0xf7df0000 0xf7df1000 rw-p      mapped
+0xf7df1000 0xf7fa5000 r-xp      /lib/i386-linux-gnu/libc-2.21.so
+0xf7fa5000 0xf7fa8000 r--p      /lib/i386-linux-gnu/libc-2.21.so
+0xf7fa8000 0xf7faa000 rw-p      /lib/i386-linux-gnu/libc-2.21.so
+0xf7faa000 0xf7fac000 rw-p      mapped
+0xf7fd5000 0xf7fd7000 rw-p      mapped
+0xf7fd7000 0xf7fd9000 r--p      [vvar]
+0xf7fd9000 0xf7fda000 r-xp      [vdso]
+0xf7fda000 0xf7ffc000 r-xp      /lib/i386-linux-gnu/ld-2.21.so
+0xf7ffc000 0xf7ffd000 r--p      /lib/i386-linux-gnu/ld-2.21.so
+0xf7ffd000 0xf7ffe000 rw-p      /lib/i386-linux-gnu/ld-2.21.so
+0xfffdd000 0xffffe000 rw-p      [stack]
+```
+
+Notice now that the stack is mapped 'rw-p'. Also, take note that ASLR is
+enabled.
+
+```shell
+$ cat /proc/sys/kernel/randomize_va_space
+2
+```
+
 
 
 [//]: # (Paths)
