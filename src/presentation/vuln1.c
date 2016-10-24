@@ -2,7 +2,7 @@
 #include <stdio.h>
 
 void vuln() {
-    char buffer[24];
+    char buffer[16];
     read(0, buffer, 100);
     puts(buffer);
 }

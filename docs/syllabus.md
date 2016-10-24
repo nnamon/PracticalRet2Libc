@@ -1,5 +1,5 @@
-Presentation and Tutorial Concept
-=================================
+Syllabus
+========
 
 This presentation is designed to be a gentle introduction to return oriented
 programming techniques in binary exploitation by demonstrating a subset of the
@@ -80,7 +80,7 @@ implementation of a vulnerable program:
 #include <stdio.h>
 
 void vuln() {
-    char buffer[24];
+    char buffer[16];
     read(0, buffer, 100);
     puts(buffer);
 }
@@ -108,6 +108,44 @@ Breaking down the important arguments and commands:
 * Write 0 into the randomize\_va\_space kernel parameter to disable ASLR.
 
 ## Exploitation Illustration
+
+First, let's visualise how the stack looks like before the buffer is read into:
+
+![Fig 1. Clean stack][classic1]
+
+For clarification, the value of the saved base pointer is 0xbfff0030 and the
+value of the return address is 0x080484f0 (an address within the binary). The
+numbers are reversed in the visualisation because x86 is a little endian
+architecture.
+
+On a valid run of the program, the buffer is filled within its bounds. Here we
+have 15 As and a null byte written to the 16 length buffer.
+
+![Fig 2. Within the bounds][classic2]
+
+However, since the read allows for the program to read more than 16 bytes into
+the buffer, we can overflow it and overwrite the saved return pointer.
+
+![Fig 3. Overwriting the saved return pointer][classic3]
+
+When the function returns, the program will crash since the instruction pointer
+is set to 0x41414141, an invalid address.
+
+To complete the technique, the attacker will fill the first part of the buffer
+with the shellcode, append the appropriate padding and overwrite the saved
+return pointer with the address of the buffer.
+
+[//]: # (![Fig 4. Shellcode and padding][classic4])
+
+![Fig 5. Overwrite the saved return pointer with buffer address][classic5]
+
+Now, when the function returns, the program will begin executing the shellcode
+contained in the buffer since the saved return pointer was overwritten by the
+buffer address. From this point onwards, the attacker has achieved arbitrary
+code execution.
+
+![Fig 6. Arbitrary code execution][classic6]
+
 
 ## ASLR, NX, Stack Canaries
 
@@ -146,3 +184,12 @@ Return Oriented Programming is an exploitation technique to re-use executable
 code portions in the binary or in other shared libraries. In this presentation,
 we will not go too in-depth to the general ROP concepts and instead focus on a
 subset called Return to Libc.
+
+
+[//]: # (Paths)
+[classic1]: ./diagrams/classic1.png
+[classic2]: ./diagrams/classic2.png
+[classic3]: ./diagrams/classic3.png
+[classic4]: ./diagrams/classic4.png
+[classic5]: ./diagrams/classic5.png
+[classic6]: ./diagrams/classic6.png
