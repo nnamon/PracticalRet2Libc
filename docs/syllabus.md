@@ -111,7 +111,7 @@ Breaking down the important arguments and commands:
 
 First, let's visualise how the stack looks like before the buffer is read into:
 
-![Fig 1. Clean stack][classic1]
+![Fig 1.1. Clean stack][classic1]
 
 For clarification, the value of the saved base pointer is 0xbfff0030 and the
 value of the return address is 0x080484f0 (an address within the binary). The
@@ -121,12 +121,12 @@ architecture.
 On a valid run of the program, the buffer is filled within its bounds. Here we
 have 15 As and a null byte written to the 16 length buffer.
 
-![Fig 2. Within the bounds][classic2]
+![Fig 1.2. Within the bounds][classic2]
 
 However, since the read allows for the program to read more than 16 bytes into
 the buffer, we can overflow it and overwrite the saved return pointer.
 
-![Fig 3. Overwriting the saved return pointer][classic3]
+![Fig 1.3. Overwriting the saved return pointer][classic3]
 
 When the function returns, the program will crash since the instruction pointer
 is set to 0x41414141, an invalid address.
@@ -135,16 +135,16 @@ To complete the technique, the attacker will fill the first part of the buffer
 with the shellcode, append the appropriate padding and overwrite the saved
 return pointer with the address of the buffer.
 
-[//]: # (![Fig 4. Shellcode and padding][classic4])
+[//]: # (![Fig 1.4. Shellcode and padding][classic4])
 
-![Fig 5. Overwrite the saved return pointer with buffer address][classic5]
+![Fig 1.5. Overwrite the saved return pointer with buffer address][classic5]
 
 Now, when the function returns, the program will begin executing the shellcode
 contained in the buffer since the saved return pointer was overwritten by the
-buffer address. From this point onwards, the attacker has achieved arbitrary
-code execution.
+buffer address (0xbfff0000). From this point onwards, the attacker has achieved
+arbitrary code execution.
 
-![Fig 6. Arbitrary code execution][classic6]
+![Fig 1.6. Arbitrary code execution][classic6]
 
 
 ## ASLR, NX, Stack Canaries
@@ -159,12 +159,57 @@ Also known as Data Execution Prevention (DEP), this protection marks writable
 regions of memory as non-executable. This prevents the processor from executing
 in these marked regions of memory.
 
+In the following diagrams, we will be introducing a new indicator colour for the
+memory regions to denote 'writable and non-executable' mapped regions. Firstly,
+the stack before the read occurs looks like this:
+
+![Fig 2.1. Stack marked non-executable][nx1]
+
+When we perform the same attack, the buffer is overrun and the saved pointers
+are overwritten once again.
+
+![Fig 2.2. Attack performed][nx2]
+
+After the function returns, the program will set the instruction pointer to
+0xbfff0000 and attempt to execute the instructions at that address. However,
+since the region of memory mapped at that address has no execution permissions,
+the program will crash.
+
+![Fig 2.3. Non-executable memory violation][nx3]
+
+Thus, the attacker's exploit is thwarted.
+
 ### Address Space Layout Randomisation
 
 This protection randomises the addresses of the memory regions where the shared
 libraries, stack, and heap are mapped at. The reason for this is to frustrate an
 attacker since they cannot predict with certainty where their payload is located
 at and the exploit will not work reliably.
+
+On the first run of the program, the stack looks like this just before the read:
+
+![Fig 3.1. Initial run 1][aslr1]
+
+If we terminate the program and run it again, the stack might look like this
+before the read:
+
+![Fig 3.2. Initial run 2][aslr2]
+
+Notice how the stack addresses do not stay constant and now have their base
+values randomised. Now, the attacker attempts to re-use their payload from the
+classic technique.
+
+![Fig 3.3. Classic payload in ASLR][aslr3]
+
+Notice that the saved return pointer is overwritten with a pointer into the
+stack at an unknown location where the data is unknown and non-user controlled.
+When the function returns, the program will begin executing unknown instructions
+at that address (0xbfff0000) and will most likely crash.
+
+![Fig 3.4. Executing in an unknown location][aslr4]
+
+Thus, it is impossible for an attacker to be able to reliably trigger the
+exploit using the standard payload.
 
 ### Stack Canaries
 
@@ -193,3 +238,10 @@ subset called Return to Libc.
 [classic4]: ./diagrams/classic4.png
 [classic5]: ./diagrams/classic5.png
 [classic6]: ./diagrams/classic6.png
+[nx1]: ./diagrams/nx1.png
+[nx2]: ./diagrams/nx2.png
+[nx3]: ./diagrams/nx3.png
+[aslr1]: ./diagrams/aslr1.png
+[aslr2]: ./diagrams/aslr2.png
+[aslr3]: ./diagrams/aslr3.png
+[aslr4]: ./diagrams/aslr4.png
