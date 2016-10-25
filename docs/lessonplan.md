@@ -7,7 +7,8 @@ art called Return2Libc. Currently, the level of exploitation taught by the class
 only includes the classic stack overflow and jump to shellcode with no
 protections enabled. We wish to build upon this knowledge and introduce methods
 to perform a successful attack when more protections are enabled (NX, Stack
-Canaries, ASLR).
+Canaries, ASLR). As with the assignment 1 task, we will focus on 32 bit linux
+binaries.
 
 ## Pre-Requisites
 
@@ -292,7 +293,7 @@ code portions in the binary or in other shared libraries. In this presentation,
 we will not go too in-depth to the general ROP concepts and instead focus on a
 subset called Return to Libc.
 
-### Vulnerable Example 1
+### Code Re-Use Example
 
 To introduce the concept of re-using code within the binary, let us introduce an
 extremely simple vulnerable binary that implements a password system.
@@ -408,6 +409,179 @@ id
 uid=1000(amon) gid=1000(amon) groups=1000(amon)
 ```
 
+### Function Re-Use Example
+
+If you thought that the previous example seemed contrived, it is. Most programs
+do not call system("/bin/sh") for you in such a convenient manner. We have
+modified the program slightly to be a little more realistic.
+
+```c
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
+
+char * not_allowed = "/bin/sh";
+
+void give_date() {
+    system("/bin/date");
+}
+
+void vuln() {
+    char password[16];
+    puts("What is the password: ");
+    scanf("%s", password);
+    if (strcmp(password, "31337h4x") == 0) {
+        puts("Correct password!");
+        give_date();
+    }
+    else {
+        puts("Incorrect password!");
+    }
+}
+
+int main() {
+    vuln();
+}
+```
+
+In this example, simply jumping to the `give_date()` function will not spawn a
+shell but instead, print the date. This is not very useful to an attacker so we
+need to look at some new techniques. At this point, we need to introduce 32 bit
+calling conventions before proceeding.
+
+#### Calling Conventions
+
+To investigate how function calls work, we can take a look at what happens when
+the `give_shell()` function is called. The function is called within the
+`vuln()` function.
+
+```shell
+ 8048536:   e8 90 ff ff ff          call   80484cb <give_date>
+ 804853b:  eb 10                   jmp    804854d <vuln+0x69>
+```
+
+To illustrate what is going on under the machinery, we re-introduce our stack
+diagrams. Please note that the diagrams are a simplification and the values and
+offsets do not accurately reflect an actual execution of the binary. We begin at
+the address 0x08048536, just before the call to `give_date()` occurs.
+
+![Fig 5.1. 0x08048536][callingconv1]
+
+When the `give_date()` function is called, the following things happen:
+
+1. The address of the next instruction in the `vuln()` function is pushed onto
+   the stack (which means the stack pointer is decremented by 4). This value is
+   0x0804853b.
+2. The instruction pointer is set to the address of `give_date()`. This value is
+   0x080484cb.
+
+![Fig 5.2. 0x080484cb][callingconv2]
+
+The disassembly of `give_date()` is as follows:
+
+```shell
+080484cb <give_date>:
+ 80484cb:       55                      push   %ebp
+ 80484cc:       89 e5                   mov    %esp,%ebp
+ 80484ce:       83 ec 08                sub    $0x4,%esp
+ 80484d4:       68 08 86 04 08          push   $0x8048608
+ 80484d9:       e8 b2 fe ff ff          call   8048390 <system@plt>
+ 80484de:       83 c4 10                add    $0x8,%esp
+ 80484e1:       90                      nop
+ 80484e2:       c9                      leave
+ 80484e3:       c3                      ret
+```
+
+To annotate what's going on:
+
+```shell
+080484cb <give_date>:
+
+== Function Prologue ==
+ 80484cb:       55                      push   %ebp
+ 80484cc:       89 e5                   mov    %esp,%ebp
+ 80484ce:       83 ec 08                sub    $0x4,%esp
+
+== system("/bin/date") ==
+ 80484d4:       68 08 86 04 08          push   $0x8048608  ; "/bin/date"
+ 80484d9:       e8 b2 fe ff ff          call   8048390 <system@plt>
+
+== Function Epilogue ==
+ 80484de:       83 c4 10                add    $0x8,%esp
+ 80484e1:       90                      nop
+ 80484e2:       c9                      leave
+ 80484e3:       c3                      ret
+```
+
+Let us step through the function prologue to observe how a stack frame is
+created. The first instruction, 0x080484cb is `push %ebp`. This pushes the base
+pointer onto the stack. This will become the saved base pointer for stack frame.
+The diagram shows the state of the registers and the stack after the instruction
+has executed.
+
+```shell
+ 80484cb:       55                      push   %ebp
+```
+
+![Fig 5.3. 0x080484cc][callingconv3]
+
+The next instruction `mov %esp, %ebp` copies the value of the stack pointer into
+the base pointer. This essentially sets the bottom of the current stack frame to
+the top of the previous stack frame.
+
+```shell
+ 80484cc:       89 e5                   mov    %esp,%ebp
+```
+
+![Fig 5.4. 0x080484ce][callingconv4]
+
+The next instruction `sub $0x4, %esp` subtracts 4 from the current stack pointer
+to allocate space for the local variables.
+
+```shell
+ 80484ce:       83 ec 08                sub    $0x4,%esp
+```
+
+![Fig 5.5. 0x080484d4][callingconv5]
+
+The next instruction `push $0x08048608` pushes the address of the string
+"/bin/date" on the stack. Note that the parameters to the called function are
+pushed in reverse order.
+
+```shell
+ 80484d4:       68 08 86 04 08          push   $0x8048608  ; "/bin/date"
+```
+
+![Fig 5.6. 0x080484d9][callingconv6]
+
+Next, when the `call 0x08048390` instruction executes, two things happen:
+
+1. The next instruction in the `give_date()` function, 0x080484de, is pushed
+   onto the stack as the saved return pointer.
+1. The instruction pointer is set to address of `system@plt`, 0x08048390.
+
+```shell
+ 80484d9:       e8 b2 fe ff ff          call   8048390 <system@plt>
+```
+
+![Fig 5.7. 0x08048390][callingconv7]
+
+We will not go into the details of the system@plt call. However, during the
+execution of the call, the stack frames look like this:
+
+![Fig 5.8. During system@plt][callingconv8]
+
+After the system@plt call returns, the stack diagram looks like the following:
+
+![Fig 5.9. After system@plt][callingconv9]
+
+
+```shell
+ 80484de:       83 c4 10                add    $0x8,%esp
+```
+
+
 [//]: # (Paths)
 [classic1]: ./diagrams/classic1.png
 [classic2]: ./diagrams/classic2.png
@@ -425,3 +599,17 @@ uid=1000(amon) gid=1000(amon) groups=1000(amon)
 [canary1]: ./diagrams/canary1.png
 [canary2]: ./diagrams/canary2.png
 [canary3]: ./diagrams/canary3.png
+[callingconv1]: ./diagrams/callingconv1.png
+[callingconv2]: ./diagrams/callingconv2.png
+[callingconv3]: ./diagrams/callingconv3.png
+[callingconv4]: ./diagrams/callingconv4.png
+[callingconv5]: ./diagrams/callingconv5.png
+[callingconv6]: ./diagrams/callingconv6.png
+[callingconv7]: ./diagrams/callingconv7.png
+[callingconv8]: ./diagrams/callingconv8.png
+[callingconv9]: ./diagrams/callingconv9.png
+[callingconv10]: ./diagrams/callingconv10.png
+[callingconv11]: ./diagrams/callingconv11.png
+[callingconv12]: ./diagrams/callingconv12.png
+[callingconv13]: ./diagrams/callingconv13.png
+
