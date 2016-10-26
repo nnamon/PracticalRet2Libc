@@ -615,6 +615,91 @@ In summary, we have observed how two stack frames were constructed and torn
 down, the `give_date()` stack frame which has no parameters and the `system@plt`
 stack frame which took one parameter.
 
+#### Faking Stack Frames
+
+Implicitly, we have also illustrated that stack frames control how the program
+unwinds when returning from a function. Now, if we could construct and fake our
+own stack frames during the attack, the implications are:
+
+1. We can control the parameters to a function (f1) we jump to.
+2. When f1 completes execution and returns, we can decide where it returns to
+   (f2).
+3. If we can manipulate the stack in between f1 returning into f2, we can
+   control the parameters to the f2.
+4. We can repeat this process to arbitrarily construct a 'chain' of functions to
+   execute to perform effect we want.
+
+To begin with, let us demonstrate faking a stack frame for a single function,
+`system@plt` with our own chosen parameter "/bin/sh" to spawn a shell.
+
+Before the read, the region after the saved return pointer for the `vuln()`
+function looks like this. 0x08048566 is the legitimate address into `main()`
+that `vuln()` will return to.
+
+![Fig 6.1. Before read][faking1]
+
+Before continuing the attacker requires a couple of values to construct the
+payload. We need the following things:
+
+1. Address to jump to. We shall use 0x08048390. This is the address of
+   `system@plt`.
+2. Address of "/bin/sh" to provide as a parameter. Conveniently, there is a
+   "/bin/sh" string already present in the binary in the `not_allowed` global
+   variable. It's address is 0x8048600.
+
+After the attacker supplies their special payload to overwrite the saved return
+pointer and fake a frame, the stack now looks like this:
+
+![Fig 6.2. After read][faking2]
+
+In the scenario, f1 is `system@plt`. In `vuln()`'s stack frame, the saved return
+pointer is overwritten with the address of f1 (`system@plt`) which means that
+when `vuln()` returns, it will jump to f1. Additionally, a new stack frame for
+f1 is created which includes a saved return pointer and a parameter.
+
+Let us step through what happens when `vuln()` returns. At the point where the
+`ret` is about to be executed, the stack pointer points at the saved return
+pointer to be popped into the instruction pointer.
+
+![Fig 6.3. Before ret][faking3]
+
+When the `ret` executes, the stack pointer will be decremented by 4 and the
+instruction pointer will now contain the address of f1 (`system@plt`). At this
+point, f1 will view the current stack frame as a valid one containing "/bin/sh"
+as a parameter and 0x41414141 as the saved return address. During f1's
+execution, a shell should be spawned. Now, let us assume that f1 has completed
+execution and is now about to perform its own `ret`. It will pop the value of
+0x41414141 off the stack into EIP and crash since the instruction pointer is now
+attempting to execute at an illegal address.
+
+![Fig 6.4 After f1][faking4]
+
+However, imagine if 0x41414141 was a valid address. We would have been able to
+keep chaining `ret` instructions to continuously execute other functions as long
+as they do not need parameters passed to them.
+
+#### Exploit Demonstration
+
+Now that we have got the theory down, we should be able to spawn a shell of our
+own.
+
+```shell
+$ (python -c 'import struct; \
+> v_ret=0x08048390;
+> f1_ret=0x41414141;
+> f1_param=0x8048600;
+> print "A"*28 + struct.pack("III", v_ret, f1_ret, f1_param)';
+> cat -) | ./vuln3
+What is the password:
+Incorrect password!
+id
+uid=1000(amon) gid=1000(amon) groups=1000(amon)
+exit
+Segmentation fault (core dumped)
+```
+
+#### Pop Pop Ret
+
 [//]: # (Paths)
 [classic1]: ./diagrams/classic1.png
 [classic2]: ./diagrams/classic2.png
@@ -644,5 +729,9 @@ stack frame which took one parameter.
 [callingconv10]: ./diagrams/callingconv10.png
 [callingconv11]: ./diagrams/callingconv11.png
 [callingconv12]: ./diagrams/callingconv12.png
-[callingconv13]: ./diagrams/callingconv13.png
+[faking1]: ./diagrams/faking1.png
+[faking2]: ./diagrams/faking2.png
+[faking3]: ./diagrams/faking3.png
+[faking4]: ./diagrams/faking4.png
+
 
