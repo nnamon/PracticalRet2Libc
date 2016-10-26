@@ -146,7 +146,7 @@ Start      End        Perm      Name
 Important things to take note of the output above is the fact that the stack is
 marked 'rwxp' which means it is both writable and executable.
 
-## Exploitation Illustration
+## Classic Exploitation Illustration
 
 First, let's visualise how the stack looks like before the buffer is read into:
 
@@ -186,7 +186,7 @@ arbitrary code execution.
 ![Fig 1.6. Arbitrary code execution][classic6]
 
 
-## ASLR, NX, Stack Canaries
+## ASLR, NX, and Stack Canaries
 
 Now that we understand how the classic exploitation technique works, let us
 start introducing protections and observing how they prevent the technique from
@@ -198,7 +198,8 @@ Also known as Data Execution Prevention (DEP), this protection marks writable
 regions of memory as non-executable. This prevents the processor from executing
 in these marked regions of memory.
 
-If we look at the memory map of
+If we look at the memory map of a program compiled with NX protection, the stack
+and heap are typically marked non-executable.
 
 In the following diagrams, we will be introducing a new indicator colour for the
 memory regions to denote 'writable and non-executable' mapped regions. Firstly,
@@ -291,7 +292,7 @@ to bypass.
 Return Oriented Programming is an exploitation technique to re-use executable
 code portions in the binary or in other shared libraries. These re-usable code
 portions are called 'gadgets'. In this presentation, we will not go too in-depth
-to the general ROP concepts and instead focus on a subset called Return to Libc.
+to the general ROP concepts and instead focus on a subset called Return to PLT.
 
 ### Code Re-Use Example
 
