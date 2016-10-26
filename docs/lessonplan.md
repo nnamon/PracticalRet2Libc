@@ -463,8 +463,9 @@ the `give_shell()` function is called. The function is called within the
 
 To illustrate what is going on under the machinery, we re-introduce our stack
 diagrams. Please note that the diagrams are a simplification and the values and
-offsets do not accurately reflect an actual execution of the binary. We begin at
-the address 0x08048536, just before the call to `give_date()` occurs.
+offsets do not accurately reflect an actual execution of the binary with regard
+to space allocated for local variables and buffers. We begin at the address
+0x08048536, just before the call to `give_date()` occurs.
 
 ![Fig 5.1. 0x08048536][callingconv1]
 
@@ -488,7 +489,6 @@ The disassembly of `give_date()` is as follows:
  80484d4:       68 08 86 04 08          push   $0x8048608
  80484d9:       e8 b2 fe ff ff          call   8048390 <system@plt>
  80484de:       83 c4 10                add    $0x8,%esp
- 80484e1:       90                      nop
  80484e2:       c9                      leave
  80484e3:       c3                      ret
 ```
@@ -509,7 +509,6 @@ To annotate what's going on:
 
 == Function Epilogue ==
  80484de:       83 c4 10                add    $0x8,%esp
- 80484e1:       90                      nop
  80484e2:       c9                      leave
  80484e3:       c3                      ret
 ```
@@ -576,11 +575,45 @@ After the system@plt call returns, the stack diagram looks like the following:
 
 ![Fig 5.9. After system@plt][callingconv9]
 
+Now, we can begin examining how the function unwinds the stack frame in the
+epilogue. In the next instruction `add $0x8, %esp`, the 8 is added to the stack
+pointer to reverse the allocation on the stack for the local variables and the
+parameters of the system@plt call.
 
 ```shell
  80484de:       83 c4 10                add    $0x8,%esp
 ```
 
+![Fig 5.10. 0x080484e2][callingconv10]
+
+Next, let us look at the `leave` instruction. This simple opcode does two
+things:
+
+1. Sets the value of the stack pointer to the value of the base pointer.
+2. Pops a value off the stack into the base pointer.
+
+This has the effect of resetting the current stack frame back to the previous
+stack frame.
+
+```shell
+ 80484e2:       c9                      leave
+```
+
+![Fig 5.11. 0x080484e3][callingconv11]
+
+Finally, to return execution back to the `vuln()` function context, the `ret`
+instruction pops a value of the stack (the saved return pointer) into the
+instruction pointer register.
+
+```shell
+ 80484e3:       c3                      ret
+```
+
+![Fig 5.12. 0x0804853b][callingconv12]
+
+In summary, we have observed how two stack frames were constructed and torn
+down, the `give_date()` stack frame which has no parameters and the `system@plt`
+stack frame which took one parameter.
 
 [//]: # (Paths)
 [classic1]: ./diagrams/classic1.png
