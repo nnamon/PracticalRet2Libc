@@ -9,3 +9,8 @@ There are two lesson plans in this project:
 [prop]: ./lessonplans/1_practicalrop/lessonplan.md
 [pret2libc]: ./lessonplans/2_practicalret2libc/lessonplan.md
 
+Youtube Videos:
+
+1. [Practical Return Oriented Programming][propvid]
+
+[propvid]: https://youtu.be/ruJXvxXzyU8
